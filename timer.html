@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bench Timer</title>
+<style>
+  :root {
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    --bg: #eceef1;
+    --panel: #ffffff;
+    --bezel: #d7dbe2;
+    --text: #1b1e24;
+    --muted: #6b7280;
+    --led: #b45309;
+    --led-glow: rgba(180,83,9,0.35);
+    --go: #16a34a;
+    --stop: #dc2626;
+    --border: #c7cbd3;
+    --dot-off: #9aa0aa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #101114;
+      --panel: #1a1c21;
+      --bezel: #26282f;
+      --text: #eef0f3;
+      --muted: #9aa0aa;
+      --led: #ffb020;
+      --led-glow: rgba(255,176,32,0.45);
+      --border: #33353c;
+      --dot-off: #52555e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #101114;
+    --panel: #1a1c21;
+    --bezel: #26282f;
+    --text: #eef0f3;
+    --muted: #9aa0aa;
+    --led: #ffb020;
+    --led-glow: rgba(255,176,32,0.45);
+    --border: #33353c;
+    --dot-off: #52555e;
+  }
+  * { box-sizing: inherit; }
+  html, body { height: 100%; }
+  html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .device {
+    width: 100%;
+    max-width: 380px;
+    background: var(--bezel);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 22px;
+  }
+  .label {
+    font-size: 13px;
+    color: var(--muted);
+    margin: 0 2px 10px;
+  }
+  .screen {
+    background: var(--panel);
+    border-radius: 12px;
+    padding: 28px 12px;
+    text-align: center;
+    box-shadow: inset 0 2px 10px rgba(0,0,0,0.25);
+    border: 1px solid var(--border);
+  }
+  .digits {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 56px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 2px;
+    color: var(--led);
+    text-shadow: 0 0 14px var(--led-glow);
+  }
+  .digits .ms { font-size: 32px; opacity: 0.85; }
+  .units {
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 0.5px;
+  }
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-top: 18px;
+  }
+  button {
+    font: inherit;
+    font-size: 15px;
+    font-weight: 600;
+    padding: 14px 10px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    cursor: pointer;
+    color: var(--text);
+    background: var(--panel);
+    transition: transform 0.05s ease;
+  }
+  button:active { transform: scale(0.97); }
+  button:focus-visible { outline: 2px solid var(--led); outline-offset: 2px; }
+  #toggleBtn.go { background: var(--go); border-color: var(--go); color: #fff; }
+  #toggleBtn.stop { background: var(--stop); border-color: var(--stop); color: #fff; }
+  .arduino {
+    margin-top: 16px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  #connectBtn { flex: 1; }
+  .status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    min-width: 92px;
+  }
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--dot-off);
+    flex: none;
+  }
+  .dot.on { background: var(--go); box-shadow: 0 0 6px var(--go); }
+  .note {
+    margin-top: 10px;
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+  <div class="device">
+    <p class="label">Timer</p>
+    <div class="screen">
+      <div class="digits" id="display">00<span class="ms">.000</span></div>
+      <div class="units">seconds . milliseconds</div>
+    </div>
+    <div class="controls">
+      <button id="toggleBtn" class="go">Start</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+    <div class="arduino">
+      <button id="connectBtn">Connect Arduino</button>
+      <div class="status"><span class="dot" id="statusDot"></span><span id="statusText">Not connected</span></div>
+    </div>
+    <p class="note" id="note">Pressing your push button sends a signal over USB that presses Start/Stop for you. Works in Chrome or Edge on a computer.</p>
+  </div>
+
+<script>
+  const display = document.getElementById('display');
+  const toggleBtn = document.getElementById('toggleBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const connectBtn = document.getElementById('connectBtn');
+  const statusDot = document.getElementById('statusDot');
+  const statusText = document.getElementById('statusText');
+  const note = document.getElementById('note');
+
+  let running = false, startTime = 0, elapsed = 0, rafId = null;
+
+  function render(ms) {
+    const total = Math.max(0, Math.floor(ms));
+    const seconds = Math.floor(total / 1000);
+    const millis = total % 1000;
+    display.innerHTML = String(seconds).padStart(2, '0') +
+      '<span class="ms">.' + String(millis).padStart(3, '0') + '</span>';
+  }
+
+  function tick() {
+    if (!running) return;
+    render(elapsed + (performance.now() - startTime));
+    rafId = requestAnimationFrame(tick);
+  }
+
+  function start() {
+    if (running) return;
+    running = true;
+    startTime = performance.now();
+    toggleBtn.textContent = 'Stop';
+    toggleBtn.classList.remove('go');
+    toggleBtn.classList.add('stop');
+    tick();
+  }
+
+  function stop() {
+    if (!running) return;
+    running = false;
+    elapsed += performance.now() - startTime;
+    cancelAnimationFrame(rafId);
+    toggleBtn.textContent = 'Start';
+    toggleBtn.classList.remove('stop');
+    toggleBtn.classList.add('go');
+  }
+
+  function toggle() { running ? stop() : start(); }
+
+  function reset() {
+    stop();
+    elapsed = 0;
+    render(0);
+  }
+
+  toggleBtn.addEventListener('click', toggle);
+  resetBtn.addEventListener('click', reset);
+  render(0);
+
+  // --- Arduino connection over Web Serial ---
+  let port = null, reader = null, keepReading = false;
+
+  if (!('serial' in navigator)) {
+    connectBtn.disabled = true;
+    statusText.textContent = 'Unsupported browser';
+    note.textContent = 'Web Serial isn\'t available here. Open this page in Chrome or Edge on a desktop computer to connect the Arduino.';
+  }
+
+  connectBtn.addEventListener('click', async () => {
+    if (port) { await disconnectSerial(); return; }
+    try {
+      port = await navigator.serial.requestPort();
+      await port.open({ baudRate: 9600 });
+      statusDot.classList.add('on');
+      statusText.textContent = 'Connected';
+      connectBtn.textContent = 'Disconnect';
+      keepReading = true;
+      readLoop();
+    } catch (err) {
+      statusText.textContent = 'Connection cancelled';
+      port = null;
+    }
+  });
+
+  async function readLoop() {
+    const decoder = new TextDecoderStream();
+    const closed = port.readable.pipeTo(decoder.writable);
+    reader = decoder.readable.getReader();
+    let buffer = '';
+    try {
+      while (keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          buffer += value;
+          let idx;
+          while ((idx = buffer.indexOf('\n')) >= 0) {
+            const line = buffer.slice(0, idx).trim();
+            buffer = buffer.slice(idx + 1);
+            if (line) toggle();
+          }
+        }
+      }
+    } catch (e) {
+      // device unplugged or read error
+    } finally {
+      try { reader.releaseLock(); } catch (e) {}
+      await closed.catch(() => {});
+      if (keepReading) await disconnectSerial();
+    }
+  }
+
+  async function disconnectSerial() {
+    keepReading = false;
+    try { await reader?.cancel(); } catch (e) {}
+    try { await port?.close(); } catch (e) {}
+    port = null;
+    statusDot.classList.remove('on');
+    statusText.textContent = 'Not connected';
+    connectBtn.textContent = 'Connect Arduino';
+  }
+</script>
+</body>
+</html>
